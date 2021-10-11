@@ -209,6 +209,15 @@ docker inspect 容器id
 	加载
 		docker load --help
 		docker load -i selfnginx.tar 
+		
+	上传hub.docker	
+		docker tag local-image:tagname new-repo:tagname
+		docker push new-repo:tagname
+		
+	登录
+		docker login
+	登出
+		docker logout
 进入容器
 	docker exec
 	

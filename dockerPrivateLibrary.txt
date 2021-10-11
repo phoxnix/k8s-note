@@ -1,0 +1,30 @@
+harbor 官方地址
+	https://github.com/goharbor/harbor
+	
+关闭防火墙 
+systemctl stop firewalld && systemctl disable firewalld
+	
+安装docker环境依赖
+yum install -y yum-utils device-mapper-persistent-data lvm2
+
+配置国内docker的yum源（阿里云）
+yum-config-manager --add repo
+http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+
+安装docker-ce
+yum install docker-ce docker-ce-cli containerd.io -yum
+systemctl start docker && systemctl enable docker
+
+安装docker-compose
+安装epel源
+yum install epel-release -y
+安装pip
+yum install python-pip -y
+更新pip版本
+pip install --upgrade pip 
+使用pip安装docker-compose
+pip install -U -i https://pypi.tuna.tsinghua.edu.cn/simple docker-compose
+
+安装harbor私有仓库
+wget http://harbor.orientsoft.cn/harbor-offline-installer-v1.5.0.tgz
+tar zxvf harbor-offline-installer-v1

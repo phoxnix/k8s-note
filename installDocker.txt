@@ -1,0 +1,214 @@
+20210910
+安装前置环境
+yum install -y yum-utils device-mapper-persistent-data lvm2
+配置 docker-ce 的yum源（阿里云） //docker-ce 开源最新版本 docker-ee 企业版 docker-其他 旧版本
+安装docker //docker-ce-cli作用是docker命令行工具包 containerd.io 容器相关接口包 yum info 查看包的具体作用fere
+yum install docker-ce docker-ce-cli containerd.io -y
+启动docker && 并设置开机启动
+systemctl start docker  && systemctl enable docker
+查看是否启动成功
+cat /proc/sys/net/ipv4/ip_forward  结果为1启动成功
+
+查询docker基本信息  版本号
+docker info //docker version
+
+镜像搜索
+docker search centos
+镜像下载 //网不好多次尝试
+1.docker pull centos
+2.docker pull hub.c.163.com/library/tomcat:latest
+3.创建配置文件 daemon.json //可以添加多个镜像源
+{
+	'registry-mirrors':[https://e9yneuy4.mirror.aliyuncs.com]
+}
+
+//修改脚本后执行
+systemctl daemon-reload
+
+//重启docker
+systemctl restart docker
+
+导入镜像
+docker load -i 		/root/dock****
+
+查看镜像
+docker images
+
+开启路由转发功能
+vim /etc/sysctl.conf //插入一下内容
+net.ipv4.ip_forward = 1
+sysctl -p //生效
+
+cat /proc/sys/net/ipv4/ip_forward 1 //路由转发开启
+
+关闭防火墙
+systemctl stop firewalld && systemctl disable firewalld 
+
+
+docker常用参数
+run 运行
+	-i 以交互模式运行容器，通常与-t同时使用
+	-t 为容器重新分配一个伪输入终端，通常与-i同时使用
+	
+docker run -it centos:lates /bin/bash
+	
+	-d 后台运行容器，并返回容器id
+	-c 后面跟待完成的命令
+	
+	-p 端口映射 80:80 容器中的80端口映射到物理机上
+	
+	-h 指定主机名
+	
+	--restart=always 在容器退出时总是重启容器
+			  no 默认策略 退出时不重启容器
+			  on-failure 非正常退出（退出状态非0） 才会重启容器
+			  on-failure:3 最多重启3次
+			  unless-stopped 不考虑在Docker守护进程启动时已经停止的容器
+		如果创建时未指定，则可通过语法设置
+		docker update --restart=always 容器id或名字
+	
+	容器实例运行结束后自动释放资源	
+	--rm
+	
+	-m 限制容器使用内存
+	
+	
+	-v 数据映射  本地路径:容器路径
+	
+	--device-write-bps value 写速度
+	--device-read-bps value 读的速度
+	
+	--device 将主机上的设备添加到容器
+	
+		docker run -itd --rm -v /opt/dockerfile/mapping1:/opt/dockerfile/mapping1 --device /dev/sda:/dev/sda --device-write-bps /dev/sda:1mb centos:latest /bin/bash
+
+		time dd if=/dev/sda of=/opt/dockerfile/mapping1/test.out bs=1M count=10 oflag=direct,nonblock
+				dd参数 
+				direct：读写数据采用直接IO方式，不走缓存，直接从内存写到硬盘上
+				nonblock 读写数据采用非阻塞IO方式，优先写dd命令的数据
+	
+	--net=none 网络静态ip 重启docker失效，需要重新配置
+	--privileged=true 特权 真正root权限
+	
+查询当前运行容器实例	
+docker ps	-a//查看所有
+	
+查询容器日志 排错
+docker logs PID 
+
+指定docker容器可以使用的cpu使用份额
+docker run -c,--cpu-shares int 创建容器时指定容器所使用的CPU份额值，弹性加权
+默认每个docker容器的cpu份额值都是1024 同一个CPU核心上，同时运行多个容器，加权效果才能体现
+
+绑定容器运行cpu
+docker run -it --name cpu0 --cpuset-cpus 0 centos:latest /bin/bash
+
+		扩展：
+		服务器架构一般分为：
+			SMP Symmetric Multi-Processor 
+				对称多处理器结构 如 x86服务器、双路服务器
+			NUMA Non-Uniform Memory Access 例如 IBM小型机 pSeries690
+				非一致存储访问接口
+			MPP Massive ParallelProcessing 
+				海量并行处理结构	例如 大型机 Z14
+			体系结构介绍
+		
+		taskset命令
+			设定cpu亲和力，能够将一个或多个进程绑定到一个或多个处理器上运行
+			参数
+				-c --cpu-list 以列表格式显示和指定CPU
+				-p --pid 在已经存在的pid上操作
+				
+			设置只在cpuID是1和2的cpu上运行sshd进程程序，第一个cpu的ID是0
+			ps -aux | grep sshd 
+			taskset -cp 1,2 1450
+			
+			查看id为1的进程在哪个cpu上跑
+			taskset -cp 1
+			
+			
+			pstree -p | more 查看进程树
+				
+			cpu数量多的时候绑定减少上下文切换的开销
+				
+		stress 测试linux系统
+		yum install epel-release -y
+		yum install stress -y
+		
+			stress 参数	
+				-v 显示版本号
+				-q 不显示运行信息
+				-n 显示已完成指令情况
+				-c 产生n个进程 每个进程反复不停的计算随机数的平方根， 测试cpu
+				-i 产生n个进程 每个进程反复调用sync() sync()用于将内存的内容写到硬盘上，测试磁盘
+				-m -vm 产生n个进程 每个进程不断调用内存分配 malloc() 和内存释放 free() 函数 测试内存
+				   --vm-bytes B 指定malloc时内存的字节数（默认256MB）
+				   --vm-hang N 指定free栈的秒数
+				-d -hadd n 产生n个执行write和unlikn函数的进程
+				时间单位 s m h d y 文件大小 K M G
+			
+		产生2个cpu进程 2个io进程 20s后停止运行
+		stress -c 2 --verbose --timeout 20s
+
+容器重命名
+docker rename docker1 docker2
+
+删除容器
+docker rm
+
+配置静态ip 工作不常用
+	创建桥设备 br0
+	安装包
+	rpm -ivh /mnt/Packages/bridge-utils-1.5****
+	把ens33绑定到br0桥设备上
+	cd /etc/sysconfig/network-scripts/ cp ifcfg-ens33 /opt vim ifcfg-ens33 删除ip相关内容 文件最后插入 BRIDGE="br0"
+	TYPE=Ethernet
+	PROXY_METHOD=none
+	BROWSER_ONLY=no
+	BOOTPROTO=static
+	IPADDR=192.168.10.235
+	NETMASK=255.255.255.0
+	GATEWAY=192.168.10.1
+	DEFROUTE=yes
+	IPV4_FAILURE_FATAL=no
+	IPV6INIT=yes
+	IPV6_AUTOCONF=yes
+	IPV6_DEFROUTE=yes
+	IPV6_FAILURE_FATAL=no
+	IPV6_ADDR_GEN_MODE=stable-privacy
+	ONBOOT=yes
+	BRIDGE=br0
+
+	vim ifcfg-br0
+	DEVICE="br0"
+
+	pipework脚本 移动到/usr/local/bin
+	pipework 网桥名 容器实例id 分配给容器的ip/掩码@网关
+	pipework br0    123512sdg23  192.168.10.239/
+	
+查询容器详细信息
+docker inspect 容器id
+
+镜像
+	hub.docker.com 搜索
+	默认最新版本	
+	//:跟版本号
+	docker pull nginx:1.20.1 
+	
+	删除镜像
+	docker rmi redis|镜像id //默认最新
+	
+	提交
+		docker commit --help
+		docker commit -a "songcmend" -m "配置修改"  bce234a61d83 selfnginx:v1.0
+		
+	保存
+		docker save --help
+		docker save -o selfnginx.tar selfnginx:v1.0
+		
+	加载
+		docker load --help
+		docker load -i selfnginx.tar 
+进入容器
+	docker exec
+	

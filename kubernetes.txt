@@ -1,0 +1,270 @@
+特点：
+	轻量级：消耗资源小
+	开源
+	弹性伸缩
+	负载均衡：IPVS
+	
+前置知识：
+	1、linux操作系统
+	2、Docker
+	
+概念和架构
+	google 2014年开源 容器化集群管理
+	
+	自动装箱
+	自动修复
+	水平扩展
+	服务发现+负载均衡
+	版本回退
+	热部署
+	存储编排
+	批处理
+	
+	Master（主控节点） 
+		API Server
+			集群统一入口 restful,交给etcd存储
+		scheduler
+			节点调度，选择node节点应用部署
+		controller-manager
+			处理集群中常规后台任务，一个资源对应一个控制器
+		etcd 
+			存储，集群数据
+	
+	Node （工作节点）
+		kubernet master排到node节点代表，管理本机容器
+		kube-proxy 提供网络代理，负载均衡
+	
+	Pod
+		最小部署单元
+		一组容器集合
+		内部所有容器共享网络
+		生命周期是短暂的
+	controller
+		确保预期pod副本数量
+		无状态应用部署
+		有状态应用部署
+		确保所有node运行同一个pod
+		一次性任务和定时任务
+	Service
+		定义一组pod的访问规则
+				
+集群搭建
+	
+	平台规划、
+		单Master集群
+			
+		多Master集群
+			负载均衡
+			
+	硬件配置、
+		master 至少2核 4g 20g  		生产环境 8核起步 16g内存 100g硬盘 node 16核起步 64g内存 500g硬盘
+		node   至少4核 8g 40g
+	部署方式
+		（1）基于客户端工具kubeadm
+				
+				关闭防火墙
+				systemctl disable firewalld
+				systemctl stop firewalld
+				关闭selinux
+				sed -i 's/enforcing/disabled' /etc/selinux/config 永久
+				setenforce 0 临时
+				关闭swap
+				swapoff -a 临时
+				sed -ri 's/.*swap.*/#&/' /etc/fstab
+				
+				根据规划设置主机名
+				hostnamectl set-hostname ***
+				
+				在master添加hosts
+				cat >> /etc/hosts << EOF
+				192.168.10.235 ce-dev-node-05-k8smaster
+				192.168.10.236 ce-dev-node-06-k8snode1
+				192.168.10.233 ce-dev-node-03-k8snode2
+				EOF 
+				
+				
+				将桥接的IPV4流量传递到iptables的链 所有机器
+				cat > /etc/sysctl.d/k8s.conf << EOF 
+				net.bridge.bridge-nf-call-ip6tables = 1
+				net.bridge.bridge-nf-call-iptables = 1
+				EOF
+
+				时间同步
+				yum install ntpdate -y
+				ntpdate time.windows.com
+				
+				所有节点安装Docker、kubeadm、kubelet
+				安装docker
+				wget https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo -o /etc/yum.repos.d/docker-ce.repo
+				yum -y install docker-ce-18.06.1.ce-3.el7   //安装最新版
+				systemctl enable docker && systemctl start docker
+				docker --version
+				
+				cat > /etc/docker/daemon.json << EOF
+				{
+					"registry-mirrors": ["https://mhzc64to.mirror.aliyuncs.com"],
+					"data-root": "/data/eyolo/var/lib/docker"
+				}
+				EOF
+				
+				添加阿里云yum软件源
+				
+				cat > /etc/yum.repos.d/kubernetes.repo << EOF
+				[kubernetes]
+				name=Kubernetes
+				baseurl=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64
+				enabled=1
+				gpgcheck=0
+				repo_gpgcheck=0
+				gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg
+				https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
+				EOF
+				
+				安装kubeadm, kubelet, kubectl
+				yum install -y kubelet-1.18.0 kubeadm-1.18.0 kubectl-1.18.0   //下载最新版
+				systemctl enable kubelet 
+				
+				部署kubernetes Master  第一行本机ip地址 第二行阿里云镜像源 第三行kubernetes版本 四五行ip地址不重复就行
+				kubeadm init --apiserver-advertise-address=192.168.10.235  --kubernetes-version v1.22.0 --service-cidr=10.96.0.0/12 --pod-network-cidr=10.244.0.0/16
+				
+				echo Environment="KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true --fail-swap-on=false" > /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+				
+				ERROR
+				
+		（2）基于二进制包方式
+				关闭防火墙
+				systemctl disable firewalld
+				systemctl stop firewalld
+				关闭selinux
+				sed -i 's/enforcing/disabled' /etc/selinux/config 永久
+				setenforce 0 临时
+				关闭swap
+				swapoff -a 临时
+				sed -ri 's/.*swap.*/#&/' /etc/fstab
+				
+				根据规划设置主机名
+				hostnamectl set-hostname ***
+				
+				在master添加hosts
+				cat >> /etc/hosts << EOF
+				192.168.10.235 ce-dev-node-05-k8smaster
+				192.168.10.236 ce-dev-node-06-k8snode1
+				192.168.10.233 ce-dev-node-03-k8snode2
+				EOF 
+				
+				为etcd和apiserver自签证书		//集群内外都需证书
+					自签证书
+						cfssl开源的证书管理工具，使用json文件生成证书，相比openssl更方便使用
+						
+					wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+					wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+					wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+					chmod +x cfssl-certinfo_linux-amd64 cfssljson_linux-amd64 cfssl_linux-amd64
+					mv cfssl_linux-amd64 /usr/local/bin/cfssl
+					mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo	
+					mv cfssljson_linux-amd64 /usr/local/bin/cfssljson	
+						
+				部署etcd集群
+				
+				部署master组件
+					kube-apiserver kube-controller-manager kube-scheduler etcd
+				部署node组件
+					kubelet kube-proxy docker etcd 
+				
+				部署集群网络
+	
+核心概念
+	Pod Controller Service Ingress
+	RABC Helm 持久存储
+	
+	kubectl命令
+	
+	yaml文件		资源清单文件，资源编排
+		apiVersion: apps/v1
+		kind: Deployment
+		metadata:
+		  creationTimestamp: null
+		  labels:
+			app: web
+		  name: web
+		spec:
+		  replicas: 1
+		  selector:
+			matchLabels:
+			  app: web
+		  strategy: {}
+		  template:
+			metadata:
+			  creationTimestamp: null
+			  labels:
+				app: web
+			spec:
+			  containers:
+			  - image: nginx
+				name: nginx
+				resources: {}
+		status: {}
+
+		
+		1、语法格式
+			标记语言，数据为中心
+			缩进表示层级关系
+			不能使用table键，只能使用空格
+			一般开头缩进俩个空格
+			字符后缩进一个空格 比如： ， 
+			---表示新的yaml文件开始
+			使用#代表注释
+			
+		2、文件组成部分
+			控制器定义
+				apiVersion 	版本	
+				kind 		资源类型
+				metadata	资源元数据
+				spec		资源规格
+				replicas 	副本数量
+				selector  	标签选择器
+				template 	Pod模板
+				metadata	Pod元数据
+				spec 		Pode规格
+				containers	容器配置
+			被控制对象
+			
+		3、常用字段含义		
+		
+		4、快速编写yaml文件
+			1、使用kubectl create命令生成yaml文件
+				kubectl create deployment web --image=nginx -o yaml --dry-run  > my1.yaml
+			2、使用kubectl get命令导出yaml文件
+				kubectl get deploy nginx -o=yaml --export > nginx2.yaml
+				
+	Pod
+		1、基本概念 
+			最小部署单元
+			包含多个容器（一组容器的集合）
+			一个pod中的容器共享网络命名空间
+			pod是短暂存在的
+		2、存在的意义
+			创建容器使用docker 一个docker对应一个容器一个进程一个运行中的应用程序
+			Pod是多进程设计，运行多个应用程序 一个pod有多个容器，一个容器运行一个应用程序
+			亲密性应用
+				俩个应用之间进行交互
+				网络之间调用
+				两个应用需要频繁调用
+		3、Pod实现机制
+			共享网络
+				容器本身之间相互隔离
+					namespace
+					group
+				
+				前提条件
+					容器在同一个namespace下
+				
+				pause根容器/info容器 ip mac port 将加入其中的应用容器放入同一个namespace中
+				
+			共享存储
+		
+集群监控平台系统
+
+高可用k8s集群
+
+集群环境部署项目

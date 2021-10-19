@@ -215,9 +215,13 @@ docker inspect 容器id
 		docker push new-repo:tagname
 		
 	登录
-		docker login
+		docker login 
 	登出
 		docker logout
 进入容器
 	docker exec
 	
+复制容器中内容
+	docker cp 
+	docker cp nginx:/etc/nginx/nginx.conf /opt/nginx.conf
+	反向复制
